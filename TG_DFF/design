@@ -1,0 +1,102 @@
+// TG_DFF_test.v
+// Transmission-Gate based Master-Slave D Flip-Flop (negative-edge triggered)
+// Uses tranif1 / tranif0 primitives to model NMOS/PMOS pass devices
+// Run on EDA Playground (Icarus) and view the waveform (gtkwave).
+
+`timescale 1ns/1ps
+
+// -----------------------------
+// Transmission Gate (behavioral with primitives)
+// -----------------------------
+module tg (
+    inout a,
+    inout b,
+    input ctrl   // TG is ON when ctrl == 1
+);
+    wire ctrl_bar;
+    // ctrl_bar = ~ctrl
+    not inv_ctrl(ctrl_bar, ctrl);
+
+    // NMOS pass transistor: conducts when ctrl == 1
+    tranif1 n_pass (a, b, ctrl);
+
+    // PMOS pass transistor: model with tranif0 controlled by ctrl_bar
+    // tranif0 conducts when its control is 0, so use ctrl_bar
+    tranif0 p_pass (a, b, ctrl_bar);
+
+endmodule
+
+// -----------------------------
+// Level-sensitive TG latch module
+// transparent_when: if 1 -> transparent when clk==1; if 0 -> transparent when clk==0
+// latch implemented as: D --(inputTG)--> node -- inverter -- nodeb -- inverter --> node
+// and a feedback TG to close the loop when inputTG is off
+// -----------------------------
+module level_latch (
+    input D,
+    input clk,               // the raw clock
+    input transparent_when,  // 1 => latch transparent when clk==1; 0 => when clk==0
+    output Q
+);
+    // internal nodes
+    wire in_net;     // after input TG
+    wire buf_out;    // after first inverter
+    wire node_fb;    // storage node (after second inverter)
+
+    // control signals: we need ctrl for input TG and ctrl for feedback TG (complements)
+    wire ctrl_in;    // active-high when input TG should conduct
+    wire ctrl_fb;    // active-high when feedback TG should conduct
+
+    // ctrl_in = (transparent_when) ? clk : ~clk
+    // ctrl_fb  = ~ctrl_in
+    generate
+        if (1) begin
+            wire clk_bar;
+            not n_clkbar(clk_bar, clk);
+            // use mux like behavior:
+            // if transparent_when == 1 -> ctrl_in = clk; else ctrl_in = clk_bar
+            // implement using ternary via assign
+            assign ctrl_in = (transparent_when) ? clk : clk_bar;
+            not n_ctrlfb(ctrl_fb, ctrl_in);
+        end
+    endgenerate
+
+    // Input TG between D and in_net (on when ctrl_in)
+    tg input_tg (.a(D), .b(in_net), .ctrl(ctrl_in));
+
+    // First inverter (inverter driving the next node and also used for buffering)
+    not inv1(buf_out, in_net);
+
+    // Feedback TG between output of second inverter (node_fb) and in_net (closes loop when ctrl_fb)
+    // We'll create node_fb by another inverter of buf_out
+    not inv2(node_fb, buf_out);
+
+    // feedback TG connects node_fb back to in_net when ctrl_fb (i.e., closes loop)
+    tg fb_tg (.a(node_fb), .b(in_net), .ctrl(ctrl_fb));
+
+    // Final Q is the buffered node_fb (use inverter to drive a clean output)
+    // or just connect Q = node_fb (but using inverter matches typical 2-inverter storage)
+    not inv_q(Q, node_fb);
+
+endmodule
+
+
+// -----------------------------
+// Master-Slave D flip-flop built from two level latches
+// This configuration: MASTER transparent when clk==0, SLAVE transparent when clk==1
+// Thus the flop is NEGATIVE-edge triggered (updates Q on falling edge).
+// -----------------------------
+module tg_dff (
+    input D,
+    input clk,
+    output Q
+);
+    wire master_q;
+
+    // MASTER: transparent when clk == 0 -> transparent_when = 0
+    level_latch master (.D(D), .clk(clk), .transparent_when(1'b0), .Q(master_q));
+
+    // SLAVE: transparent when clk == 1 -> transparent_when = 1
+    level_latch slave (.D(master_q), .clk(clk), .transparent_when(1'b1), .Q(Q));
+
+endmodule
