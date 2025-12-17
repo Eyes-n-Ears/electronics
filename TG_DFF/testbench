@@ -1,0 +1,42 @@
+// Code your testbench here
+// or browse Examples
+// -----------------------------
+// Testbench
+// -----------------------------
+module tb;
+    reg clk = 0;
+    reg D = 0;
+    wire Q;
+
+    // Instantiate DUT
+    tg_dff dut (.D(D), .clk(clk), .Q(Q));
+
+    // Clock: 10 ns period (toggle every 5 ns)
+    always #5 clk = ~clk;
+
+    initial begin
+        // Dump waves
+        $dumpfile("tg_dff.vcd");
+        $dumpvars(0, tb);
+
+        // Stimulus sequence
+        $display("time\tclk\tD\tQ");
+        $monitor("%g\t%b\t%b\t%b", $time, clk, D, Q);
+
+        // initial values
+        D = 0;
+        #12; // let a few edges happen
+
+        // Change D around and observe flip-flop behavior
+        D = 1; #8;   // change while clk may be 0 or 1
+        #10;
+        D = 0; #7;
+        #20;
+        D = 1; #3;
+        #20;
+        D = 0; #30;
+        #20;
+
+        $finish;
+    end
+endmodule
